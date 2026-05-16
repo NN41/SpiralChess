@@ -2,22 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Knight-placement spiral</title>
+<title>Spiral Chess</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<h1>Knight-placement spiral</h1>
+<h1>Spiral Chess</h1>
 
 <p>
-K players take turns. Each walks an outward square spiral and drops a piece on
-the first square not attacked by the other players' pieces. Based on OEIS
-A392177 / A392178. Pick the number of rounds, the players, their pieces and
-colors, then press Run.
+K players take turns. Each walks an outward square spiral from its own starting
+square and drops a piece on the first square not attacked by the other players'
+pieces. Based on OEIS A392177 / A392178. Pick the number of rounds, the
+players, their pieces, colors and starting squares, then press Run.
 </p>
 
 <p>
-Rounds (N): <input type="number" id="n" value="1000" min="1" max="20000">
+Rounds (N): <input type="number" id="n" value="1000" min="1" max="100000">
 &nbsp;&nbsp;
 Players (K): <input type="number" id="k" value="2" min="1" max="8">
 </p>
@@ -25,19 +25,30 @@ Players (K): <input type="number" id="k" value="2" min="1" max="8">
 <div id="players"></div>
 
 <p>
-Add a custom piece (an (m,n)-leaper):
-name <input type="text" id="cp-name" size="8">
-m <input type="number" id="cp-m" value="2" size="3">
-n <input type="number" id="cp-n" value="1" size="3">
-<button id="add-piece">Add piece</button>
-</p>
-
-<p>
 <button id="run">Run</button>
+<button id="open-full">Open full image</button>
 <button id="png">Download PNG</button>
 </p>
 
 <canvas id="canvas" width="800" height="800"></canvas>
+
+<h2>Spiral index over time</h2>
+<p>
+For each player, the index along the outward spiral (origin = 0) of the square
+chosen on each turn.
+</p>
+<canvas id="chart" width="800" height="280"></canvas>
+
+<details id="piece-info">
+<summary>Piece movements</summary>
+<p>
+Every piece is an <strong>(m,n)-leaper</strong>, a generalization of the chess
+knight. From square (x,y) it jumps directly &mdash; over anything in between
+&mdash; to the up-to-8 squares (x&plusmn;m,&nbsp;y&plusmn;n) and
+(x&plusmn;n,&nbsp;y&plusmn;m). The knight is the (2,1)-leaper.
+</p>
+<ul id="piece-list"></ul>
+</details>
 
 <script type="module" src="src/main.js"></script>
 </body>

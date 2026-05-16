@@ -5,10 +5,16 @@ import { reachable } from "./pieces.js";
 const key = (p) => p[0] + "," + p[1];
 
 // pieceVecs: array of length K, each entry the [m,n] vector for that player.
+// starts: optional array of length K, each entry the [x,y] square where that
+//   player begins walking the spiral. Defaults to the origin for every player
+//   (which reproduces the Python reference exactly). step() walks the spiral
+//   forward from any integer square, so any [x,y] is a valid start.
 // Returns histories: array of K arrays of [x,y] positions.
-export function simulate(N, pieceVecs) {
+export function simulate(N, pieceVecs, starts) {
   const K = pieceVecs.length;
-  const candidates = Array.from({ length: K }, () => [0, 0]);
+  const candidates = Array.from({ length: K }, (_, i) =>
+    starts && starts[i] ? [starts[i][0], starts[i][1]] : [0, 0]
+  );
   const histories = Array.from({ length: K }, () => []);
   const verboten = Array.from({ length: K }, () => new Set());
 

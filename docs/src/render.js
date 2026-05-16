@@ -1,5 +1,5 @@
 // Draw the placement histories on a canvas. Autoscale to the data bounds
-// with a 1-cell margin (mirrors the matplotlib bounds logic, main.py 160-161).
+// with a 1-cell margin
 export function render(canvas, histories, colors) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
@@ -48,13 +48,17 @@ export function render(canvas, histories, colors) {
     }
   }
 
-  const r = Math.max(1.5, Math.min(6, scale * 0.35));
+  // Fill the whole cell. Snap edges to integer pixels with floor/ceil so
+  // adjacent cells abut with no white seams, and guarantee >=1px so cells
+  // stay visible at large N.
   for (let i = 0; i < histories.length; i++) {
     ctx.fillStyle = colors[i];
     for (const [x, y] of histories[i]) {
-      ctx.beginPath();
-      ctx.arc(px(x), py(y), r, 0, 2 * Math.PI);
-      ctx.fill();
+      const x0 = Math.floor(px(x - 0.5));
+      const y0 = Math.floor(py(y + 0.5)); // y is flipped, so +0.5 is the TOP edge
+      const w = Math.max(1, Math.ceil(px(x + 0.5)) - x0);
+      const h = Math.max(1, Math.ceil(py(y - 0.5)) - y0);
+      ctx.fillRect(x0, y0, w, h);
     }
   }
 }

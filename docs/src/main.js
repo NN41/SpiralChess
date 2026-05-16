@@ -1,6 +1,8 @@
-import { PIECES } from "./pieces.js";
+import { PIECES, describePiece } from "./pieces.js";
 import { simulate } from "./simulation.js";
+import { toSpiralIndices } from "./indices.js";
 import { render } from "./render.js";
+import { renderChart } from "./chart.js";
 
 // Default per-player colors (ported from PLAYER_COLORS, main.py 146-155).
 const PLAYER_COLORS = [
@@ -8,21 +10,23 @@ const PLAYER_COLORS = [
   "#6A1B9A", "#00838F", "#F9A825", "#4E342E",
 ];
 
-// Runtime piece table: built-ins plus any custom pieces the user adds.
-const pieces = { ...PIECES };
-
 const playersDiv = document.getElementById("players");
 const kInput = document.getElementById("k");
 const nInput = document.getElementById("n");
 const canvas = document.getElementById("canvas");
+const chartCanvas = document.getElementById("chart");
 
-// Build an <option> list for the current piece table.
+let lastRun = null; // { histories, colors } from the most recent Run
+
+// Build the <option> list for the piece dropdown. The leaper vector is shown
+// in the label so the movement is visible without opening the reference.
 function pieceOptions(selected) {
-  return Object.keys(pieces)
-    .map(
-      (name) =>
-        `<option value="${name}"${name === selected ? " selected" : ""}>${name}</option>`
-    )
+  return Object.keys(PIECES)
+    .map((name) => {
+      const [m, n] = PIECES[name];
+      const sel = name === selected ? " selected" : "";
+      return `<option value="${name}"${sel}>${name} (${m},${n})</option>`;
+    })
     .join("");
 }
 
@@ -33,64 +37,98 @@ function buildPlayerRows() {
   const prev = [...playersDiv.querySelectorAll(".player-row")].map((row) => ({
     piece: row.querySelector("select").value,
     color: row.querySelector('input[type="color"]').value,
+    sx: row.querySelector(".start-x").value,
+    sy: row.querySelector(".start-y").value,
   }));
 
   playersDiv.innerHTML = "";
   for (let i = 0; i < K; i++) {
     const piece = prev[i] ? prev[i].piece : "knight";
     const color = prev[i] ? prev[i].color : PLAYER_COLORS[i % PLAYER_COLORS.length];
+    const sx = prev[i] ? prev[i].sx : "0";
+    const sy = prev[i] ? prev[i].sy : "0";
     const row = document.createElement("div");
     row.className = "player-row";
     row.innerHTML =
       `Player ${i + 1}: ` +
       `<select>${pieceOptions(piece)}</select> ` +
-      `<input type="color" value="${color}">`;
+      `<input type="color" value="${color}"> ` +
+      `&nbsp; start (x, y): ` +
+      `<input type="number" class="start-x" value="${sx}" size="4"> ` +
+      `<input type="number" class="start-y" value="${sy}" size="4">`;
     playersDiv.appendChild(row);
   }
 }
 
-function refreshPieceDropdowns() {
-  for (const sel of playersDiv.querySelectorAll("select")) {
-    const cur = sel.value;
-    sel.innerHTML = pieceOptions(cur);
-  }
+// Fill the reference list with every piece and its movement.
+function buildPieceList() {
+  const ul = document.getElementById("piece-list");
+  ul.innerHTML = Object.keys(PIECES)
+    .map((name) => `<li><strong>${name}</strong> &mdash; ${describePiece(name)}</li>`)
+    .join("");
 }
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+// Read a starting-coordinate input: round to an integer, empty/NaN -> 0.
+function readCoord(input) {
+  const v = Math.round(parseFloat(input.value));
+  return Number.isFinite(v) ? v : 0;
+}
+
 function run() {
-  const N = clamp(parseInt(nInput.value, 10) || 1, 1, 20000);
+  const N = clamp(parseInt(nInput.value, 10) || 1, 1, 100000);
   nInput.value = N;
   const rows = [...playersDiv.querySelectorAll(".player-row")];
-  const pieceVecs = rows.map((r) => pieces[r.querySelector("select").value]);
+  const pieceVecs = rows.map((r) => PIECES[r.querySelector("select").value]);
   const colors = rows.map((r) => r.querySelector('input[type="color"]').value);
-  const histories = simulate(N, pieceVecs);
+  const starts = rows.map((r) => [
+    readCoord(r.querySelector(".start-x")),
+    readCoord(r.querySelector(".start-y")),
+  ]);
+
+  const histories = simulate(N, pieceVecs, starts);
+  lastRun = { histories, colors };
   render(canvas, histories, colors);
+  renderChart(chartCanvas, toSpiralIndices(histories), colors);
+}
+
+// Re-render the last run to a large offscreen canvas for a crisp,
+// zoomable image. render() reads the canvas's own size, so nothing else
+// needs to change.
+const FULL_SIZE = 3000;
+function fullImageURL() {
+  const off = document.createElement("canvas");
+  off.width = FULL_SIZE;
+  off.height = FULL_SIZE;
+  render(off, lastRun.histories, lastRun.colors);
+  return off.toDataURL("image/png");
 }
 
 // --- wire up controls ---
-document.getElementById("k").addEventListener("change", buildPlayerRows);
+kInput.addEventListener("change", buildPlayerRows);
 document.getElementById("run").addEventListener("click", run);
 
-document.getElementById("add-piece").addEventListener("click", () => {
-  const name = document.getElementById("cp-name").value.trim();
-  const m = Math.abs(parseInt(document.getElementById("cp-m").value, 10));
-  const n = Math.abs(parseInt(document.getElementById("cp-n").value, 10));
-  if (!name) return alert("Give the piece a name.");
-  if (!Number.isFinite(m) || !Number.isFinite(n)) return alert("m and n must be integers.");
-  if (m === 0 && n === 0) return alert("A (0,0) piece can't move.");
-  pieces[name] = [m, n];
-  refreshPieceDropdowns();
-  alert(`Added piece "${name}" = (${m}, ${n}).`);
-});
-
 document.getElementById("png").addEventListener("click", () => {
+  if (!lastRun) return alert("Press Run first.");
   const a = document.createElement("a");
-  a.href = canvas.toDataURL("image/png");
-  a.download = "spiral.png";
+  a.href = fullImageURL();
+  a.download = "spiralchess.png";
   a.click();
 });
 
+document.getElementById("open-full").addEventListener("click", () => {
+  if (!lastRun) return alert("Press Run first.");
+  const w = window.open();
+  if (w) {
+    w.document.write(
+      `<title>Spiral Chess</title><img src="${fullImageURL()}" ` +
+        `style="image-rendering:pixelated">`
+    );
+  }
+});
+
 buildPlayerRows();
+buildPieceList();
