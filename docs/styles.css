@@ -1,5 +1,4 @@
 /* Deliberately plain. */
 body { margin: 1em; }
-canvas { border: 1px solid black; display: block; }
+canvas { border: 1px solid black; }
 .player-row { margin: 2px 0; }
-#piece-info { margin-top: 1em; }

@@ -10,16 +10,24 @@
 <h1>Spiral Chess</h1>
 
 <p>
-K players take turns. Each walks an outward square spiral from its own starting
-square and drops a piece on the first square not attacked by the other players'
-pieces. Based on OEIS A392177 / A392178. Pick the number of rounds, the
-players, their pieces, colors and starting squares, then press Run.
+K players take turns. Each walks an outward spiral from its own starting cell
+and drops a piece on the first cell not attacked by the other players' pieces.
+Square lattice is based on OEIS A392177 / A392178; the hexagonal lattice is the
+same game on a hex grid. Pick the lattice, the number of rounds, the players,
+their pieces, colors and starting indices (position along the spiral, origin =
+0), then press Run.
 </p>
 
 <p>
-Rounds (N): <input type="number" id="n" value="1000" min="1" max="100000">
+Lattice:
+<select id="geom">
+<option value="square" selected>Square</option>
+<option value="hex">Hexagonal</option>
+</select>
 &nbsp;&nbsp;
-Players (K): <input type="number" id="k" value="2" min="1" max="8">
+Rounds: <input type="number" id="n" value="1000" min="1" max="1000000">
+&nbsp;&nbsp;
+Players: <input type="number" id="k" value="2" min="1" max="8">
 </p>
 
 <div id="players"></div>
@@ -31,24 +39,6 @@ Players (K): <input type="number" id="k" value="2" min="1" max="8">
 </p>
 
 <canvas id="canvas" width="800" height="800"></canvas>
-
-<h2>Spiral index over time</h2>
-<p>
-For each player, the index along the outward spiral (origin = 0) of the square
-chosen on each turn.
-</p>
-<canvas id="chart" width="800" height="280"></canvas>
-
-<details id="piece-info">
-<summary>Piece movements</summary>
-<p>
-Every piece is an <strong>(m,n)-leaper</strong>, a generalization of the chess
-knight. From square (x,y) it jumps directly &mdash; over anything in between
-&mdash; to the up-to-8 squares (x&plusmn;m,&nbsp;y&plusmn;n) and
-(x&plusmn;n,&nbsp;y&plusmn;m). The knight is the (2,1)-leaper.
-</p>
-<ul id="piece-list"></ul>
-</details>
 
 <script type="module" src="src/main.js"></script>
 </body>
