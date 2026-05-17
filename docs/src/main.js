@@ -21,6 +21,8 @@ const GEOMETRIES = {
     render,
     // 8 squares an [m,n]-leaper attacks, as offsets from its own cell.
     offsetsFor: (name) => reachable([0, 0], PIECES[name]),
+    // The piece's defining [m,n] leaper vector, shown read-only in the UI.
+    vectorLabel: (name) => `(${PIECES[name].join(",")})`,
   },
   hex: {
     pieces: HEX_PIECES,
@@ -28,6 +30,8 @@ const GEOMETRIES = {
     render: hexRender,
     // D6 orbit of the piece's cube triple, as axial offsets.
     offsetsFor: (name) => hexOrbit(HEX_PIECES[name]),
+    // The piece's defining cube triple (a,b,c), shown read-only in the UI.
+    vectorLabel: (name) => `(${HEX_PIECES[name].join(",")})`,
   },
 };
 
@@ -64,6 +68,11 @@ function buildPlayerRows() {
     piece: row.querySelector("select").value,
     color: row.querySelector('input[type="color"]').value,
     startIndex: row.querySelector(".start-index").value,
+    // Indices of the players this row is "protected from". Targets that no
+    // longer exist after a K change are simply not re-rendered below.
+    protectedFrom: new Set(
+      [...row.querySelectorAll(".prot:checked")].map((c) => +c.dataset.target)
+    ),
   }));
 
   playersDiv.innerHTML = "";
@@ -72,15 +81,30 @@ function buildPlayerRows() {
     if (!(piece in g.pieces)) piece = "knight";
     const color = prev[i] ? prev[i].color : PLAYER_COLORS[i % PLAYER_COLORS.length];
     const startIndex = prev[i] ? prev[i].startIndex : "0";
+    const prevProt = prev[i] ? prev[i].protectedFrom : new Set();
+    const boxes = [];
+    for (let j = 0; j < K; j++) {
+      if (j === i) continue; // a player is never protected from itself
+      const checked = prevProt.has(j) ? " checked" : "";
+      boxes.push(
+        `<label><input type="checkbox" class="prot" data-target="${j}"${checked}>P${j + 1}</label>`
+      );
+    }
     const row = document.createElement("div");
     row.className = "player-row";
     row.innerHTML =
       `Player ${i + 1}: ` +
       `<select>${pieceOptions(g.pieces, piece)}</select> ` +
+      `<span class="mn">${g.vectorLabel(piece)}</span> ` +
       `<input type="color" value="${color}"> ` +
       `&nbsp; starting position: ` +
-      `<input type="number" class="start-index" value="${startIndex}" min="0" size="6">`;
+      `<input type="number" class="start-index" value="${startIndex}" min="0" size="6">` +
+      (boxes.length ? `&nbsp; protected from: ${boxes.join(" ")}` : "");
     playersDiv.appendChild(row);
+    const sel = row.querySelector("select");
+    sel.addEventListener("change", () => {
+      row.querySelector(".mn").textContent = g.vectorLabel(sel.value);
+    });
   }
 }
 
@@ -111,8 +135,14 @@ function run() {
   const starts = rows.map((r) =>
     cellAtIndex(g.step, readIndex(r.querySelector(".start-index")))
   );
+  const protectedFrom = rows.map(
+    (r) =>
+      new Set(
+        [...r.querySelectorAll(".prot:checked")].map((c) => +c.dataset.target)
+      )
+  );
 
-  const histories = simulate(N, offsets, starts, g.step);
+  const histories = simulate(N, offsets, starts, g.step, protectedFrom);
   lastRun = { histories, colors, render: g.render };
   g.render(canvas, histories, colors);
 }
@@ -128,10 +158,36 @@ function fullImageURL() {
   return off.toDataURL("image/png");
 }
 
+// Random integer in [lo, hi], both inclusive.
+function randInt(lo, hi) {
+  return lo + Math.floor(Math.random() * (hi - lo + 1));
+}
+
+// Fill every control with random choices, then run: a random lattice, 2-8
+// players, a random piece and start index (0-25) each, and a coin flip per
+// ordered player pair for the "protected from" relation.
+function randomize() {
+  const names = Object.keys(GEOMETRIES);
+  geomInput.value = names[randInt(0, names.length - 1)];
+  kInput.value = randInt(2, 8);
+  buildPlayerRows();
+  const g = geom();
+  const pieces = Object.keys(g.pieces);
+  for (const r of playersDiv.querySelectorAll(".player-row")) {
+    const sel = r.querySelector("select");
+    sel.value = pieces[randInt(0, pieces.length - 1)];
+    r.querySelector(".mn").textContent = g.vectorLabel(sel.value);
+    r.querySelector(".start-index").value = randInt(0, 25);
+    for (const c of r.querySelectorAll(".prot")) c.checked = Math.random() < 0.5;
+  }
+  run();
+}
+
 // --- wire up controls ---
 geomInput.addEventListener("change", buildPlayerRows);
 kInput.addEventListener("change", buildPlayerRows);
 document.getElementById("run").addEventListener("click", run);
+document.getElementById("randomize").addEventListener("click", randomize);
 
 document.getElementById("png").addEventListener("click", () => {
   if (!lastRun) return alert("Press Run first.");

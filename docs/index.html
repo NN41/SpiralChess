@@ -15,7 +15,10 @@ and drops a piece on the first cell not attacked by the other players' pieces.
 Square lattice is based on OEIS A392177 / A392178; the hexagonal lattice is the
 same game on a hex grid. Pick the lattice, the number of rounds, the players,
 their pieces, colors and starting indices (position along the spiral, origin =
-0), then press Run.
+0), then press Run. A player marked "protected from" an opponent ignores that
+opponent's threats — it may place on a cell that opponent only attacks (no
+pieces are ever removed). The piece's leaper vector is shown after its name.
+Randomize fills every control at random and runs.
 </p>
 
 <p>
@@ -25,7 +28,7 @@ Lattice:
 <option value="hex">Hexagonal</option>
 </select>
 &nbsp;&nbsp;
-Rounds: <input type="number" id="n" value="1000" min="1" max="1000000">
+Rounds: <input type="number" id="n" value="10000" min="1" max="1000000">
 &nbsp;&nbsp;
 Players: <input type="number" id="k" value="2" min="1" max="8">
 </p>
@@ -33,6 +36,7 @@ Players: <input type="number" id="k" value="2" min="1" max="8">
 <div id="players"></div>
 
 <p>
+<button id="randomize">Randomize</button>
 <button id="run">Run</button>
 <button id="open-full">Open full image</button>
 <button id="png">Download PNG</button>
