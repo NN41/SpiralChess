@@ -2,3 +2,8 @@
 body { margin: 1em; }
 canvas { border: 1px solid black; }
 .player-row { margin: 2px 0; }
+table#players { border-collapse: collapse; }
+table#players th, table#players td { border: 1px solid #ccc; padding: 2px 6px; text-align: left; }
+table#players th { background: #f0f0f0; }
+.hdr-btns { font-weight: normal; }
+#run, button.rnd[data-act="all"] { font-size: 1.1em; font-weight: bold; padding: 4px 14px; background: #1565C0; color: #fff; border: 1px solid #0d47a1; }
