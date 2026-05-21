@@ -21,6 +21,7 @@ const DEFAULTS = {
   start: 0, // per-player (start index)
   color: (i) => PLAYER_COLORS[i % PLAYER_COLORS.length], // per-player
   ignores: () => [], // per-player: ignores nobody
+  active: true, // per-player: included in the simulation
 };
 const K_MIN = 1, K_MAX = 8;
 const N_MIN = 1, N_MAX = 1000000;
@@ -58,6 +59,7 @@ const geomInput = document.getElementById("geom");
 const kInput = document.getElementById("k");
 const nInput = document.getElementById("n");
 const canvas = document.getElementById("canvas");
+const indexSeqBody = document.getElementById("index-seq-body");
 
 let lastRun = null; // { histories, colors, render } from the most recent Run
 
@@ -69,7 +71,7 @@ function freshDefaultState() {
     geom: DEFAULTS.geom,
     k: DEFAULTS.k,
     n: DEFAULTS.n,
-    players: [], // [{ piece, color, start, ignores: [opponentIndex,...] }]
+    players: [], // [{ piece, color, start, ignores: [opponentIndex,...], active }]
   };
 }
 let state = freshDefaultState();
@@ -95,6 +97,8 @@ function cellAtIndex(step, index) {
   return p;
 }
 
+const key = (p) => p[0] + "," + p[1];
+
 // --- RNG ------------------------------------------------------------------
 // Random integer in [lo, hi], both inclusive.
 function randInt(lo, hi) {
@@ -102,6 +106,17 @@ function randInt(lo, hi) {
 }
 function randColor() {
   return "#" + randInt(0, 0xffffff).toString(16).padStart(6, "0");
+}
+// Random ignore-set for player i over a K-sized lineup: independent fair coin
+// per ordered pair (i, j != i). Used by both the column-level and per-row
+// ignore-Randomize buttons, so they stay in sync.
+function randomIgnores(i, k) {
+  const ig = [];
+  for (let j = 0; j < k; j++) {
+    if (j === i) continue;
+    if (Math.random() < 0.5) ig.push(j);
+  }
+  return ig;
 }
 
 // --- state <-> DOM bridge -------------------------------------------------
@@ -114,16 +129,24 @@ function ensurePlayers(k) {
       color: DEFAULTS.color(i),
       start: DEFAULTS.start,
       ignores: DEFAULTS.ignores(),
+      active: DEFAULTS.active,
     });
+  }
+  // Backfill any pre-existing row that pre-dates the `active` flag.
+  for (const p of state.players) {
+    if (typeof p.active !== "boolean") p.active = DEFAULTS.active;
   }
 }
 
-// Build the <option> list for the current lattice's piece table.
-function pieceOptions(pieces, selected) {
+// Build the <option> list for the current lattice's piece table. Each option
+// is labelled with the piece's name *and* its leaper vector (square: (m,n);
+// hex: cube triple), so the offsets are visible while scrolling the dropdown
+// instead of only after the selection commits.
+function pieceOptions(pieces, selected, vectorLabel) {
   return Object.keys(pieces)
     .map(
       (name) =>
-        `<option value="${name}"${name === selected ? " selected" : ""}>${name}</option>`
+        `<option value="${name}"${name === selected ? " selected" : ""}>${name} ${vectorLabel(name)}</option>`
     )
     .join("");
 }
@@ -145,26 +168,44 @@ function buildPlayerRows() {
     const ignoreSet = new Set(p.ignores);
     const boxes = [];
     for (let j = 0; j < K; j++) {
-      if (j === i) continue; // a player is never protected from itself
+      if (j === i) {
+        // Visual-only "self" checkbox so each row's Protected-from cell has
+        // the same number of boxes (= K) and they line up across rows. It's
+        // disabled + always checked because a player can't threaten itself,
+        // and it has *no* `.prot` class so readDomIntoState skips it.
+        boxes.push(
+          `<label title="A player can never threaten itself.">` +
+            `<input type="checkbox" checked disabled>P${j + 1}</label>`
+        );
+        continue;
+      }
       const checked = ignoreSet.has(j) ? " checked" : "";
       boxes.push(
         `<label title="Ignore P${j + 1}'s threats">` +
           `<input type="checkbox" class="prot" data-target="${j}"${checked}>P${j + 1}</label>`
       );
     }
+    const activeChecked = p.active ? " checked" : "";
     const row = document.createElement("tr");
     row.className = "player-row";
     row.innerHTML =
-      `<td>Player ${i + 1}</td>` +
+      `<td>` +
+        `<label title="Active: include this player in the simulation">` +
+          `<input type="checkbox" class="active"${activeChecked}> Player ${i + 1}</label> ` +
+        `<button class="rnd-row" data-i="${i}" title="Randomize this player (keeps color)">Randomize</button>` +
+      `</td>` +
       `<td><input type="color" value="${p.color}"></td>` +
-      `<td><select>${pieceOptions(g.pieces, p.piece)}</select> ` +
-      `<span class="mn">${g.vectorLabel(p.piece)}</span></td>` +
-      `<td><input type="number" class="start-index" value="${p.start}" min="0" size="6"></td>` +
-      `<td class="ignores-cell">${boxes.join(" ")}</td>`;
+      `<td><select>${pieceOptions(g.pieces, p.piece, g.vectorLabel)}</select></td>` +
+      `<td><input type="number" class="start-index" value="${p.start}" min="0"></td>` +
+      `<td class="ignores-cell">${boxes.join(" ")} ` +
+        `<button class="rnd-prot" data-i="${i}" title="Randomize ignore-threats-from for this player">Randomize</button>` +
+      `</td>`;
     playerRowsBody.appendChild(row);
-    const sel = row.querySelector("select");
-    sel.addEventListener("change", () => {
-      row.querySelector(".mn").textContent = g.vectorLabel(sel.value);
+
+    // Auto-rerun: any input/select/checkbox edit inside the row re-runs.
+    // The disabled self-checkbox can't fire change, so no special-casing.
+    row.querySelectorAll("input, select").forEach((el) => {
+      el.addEventListener("change", run);
     });
   }
 }
@@ -192,6 +233,8 @@ function readDomIntoState() {
     p.piece = r.querySelector("select").value;
     p.color = r.querySelector('input[type="color"]').value;
     p.start = readIndex(r.querySelector(".start-index"));
+    const activeEl = r.querySelector(".active");
+    p.active = activeEl ? activeEl.checked : true;
     const checked = new Set(
       [...r.querySelectorAll(".prot:checked")].map((c) => +c.dataset.target)
     );
@@ -235,29 +278,134 @@ function cropHistories(histories, shell) {
   return cropped.some((h) => h.length) ? cropped : histories;
 }
 
+// --- index-sequence panel -------------------------------------------------
+// For each history's cells, find their global-spiral index — i.e. how many
+// step()s from the origin reach that cell. This is the OEIS numbering used in
+// A392177 etc., independent of where each player's *own* spiral starts. We
+// walk the global spiral once, recording each visited cell's index in a Map,
+// and stop as soon as every cell we care about has been seen.
+function globalSpiralIndices(histories, step) {
+  const wanted = new Set();
+  for (const h of histories) for (const c of h) wanted.add(key(c));
+  if (wanted.size === 0) return histories.map(() => []);
+
+  // Safety cap: A392177-like sequences place at indices ~3x piece count, so
+  // walking ~50x the wanted-set size is more than enough headroom. The walk
+  // exits early via the wanted.size===0 check below in the common case.
+  const cap = Math.max(10000, wanted.size * 50);
+  const keyToIdx = new Map();
+  let cell = [0, 0];
+  for (let idx = 0; idx < cap; idx++) {
+    const k = key(cell);
+    if (wanted.has(k)) {
+      keyToIdx.set(k, idx);
+      wanted.delete(k);
+      if (wanted.size === 0) break;
+    }
+    cell = step(cell);
+  }
+  return histories.map((h) =>
+    h.map((c) => {
+      const idx = keyToIdx.get(key(c));
+      return idx === undefined ? -1 : idx;
+    })
+  );
+}
+
+// Rebuild the collapsible "Index sequence" panel below the canvas. We label
+// each sequence with the *original* player number (so inactivating a player
+// doesn't renumber the rest mid-list) and color the label with that player's
+// color, so the panel reads like a legend for the canvas. Each sequence is
+// capped at INDEX_SEQ_CAP integers — OEIS submission needs only the first
+// ~75 anyway, and rendering tens of thousands of commas locks the DOM up.
+const INDEX_SEQ_CAP = 100;
+function renderIndexSeq(liveHistories, liveOrig, allColors, step) {
+  if (!indexSeqBody) return;
+  if (!liveHistories.length) {
+    indexSeqBody.innerHTML = "<i>No active players.</i>";
+    return;
+  }
+  const seqs = globalSpiralIndices(liveHistories, step);
+  indexSeqBody.innerHTML = liveHistories
+    .map((_, live) => {
+      const orig = liveOrig[live];
+      const color = allColors[orig];
+      const full = seqs[live];
+      const shown = full.slice(0, INDEX_SEQ_CAP).join(", ");
+      const more =
+        full.length > INDEX_SEQ_CAP
+          ? ` <small>(first ${INDEX_SEQ_CAP} of ${full.length})</small>`
+          : "";
+      return `<div><b style="color:${color}">Player ${orig + 1}:</b> <code>${shown}</code>${more}</div>`;
+    })
+    .join("");
+}
+
 function run() {
   readDomIntoState();
   const g = geom();
   const N = clamp(parseInt(nInput.value, 10) || 1, N_MIN, N_MAX);
   nInput.value = N;
   const rows = [...playerRowsBody.querySelectorAll(".player-row")];
-  const offsets = rows.map((r) => g.offsetsFor(r.querySelector("select").value));
-  const colors = rows.map((r) => r.querySelector('input[type="color"]').value);
-  const starts = rows.map((r) =>
+
+  // Pull every per-row datum once, then filter by `active`. Inactive players
+  // never reach simulate(); they're stripped out and the remaining ones are
+  // renumbered into a contiguous 0..K'-1 lineup, with their `ignores` lists
+  // remapped through origToLive (and any reference to an inactive opponent
+  // dropped). This keeps simulation.js untouched — the Python parity path
+  // through it is identical when every player is active.
+  const allOffsets = rows.map((r) => g.offsetsFor(r.querySelector("select").value));
+  const allColors = rows.map((r) => r.querySelector('input[type="color"]').value);
+  const allStarts = rows.map((r) =>
     cellAtIndex(g.step, readIndex(r.querySelector(".start-index")))
   );
-  const protectedFrom = rows.map(
+  const allProtected = rows.map(
     (r) =>
       new Set(
         [...r.querySelectorAll(".prot:checked")].map((c) => +c.dataset.target)
       )
   );
+  const allActive = rows.map((r) => {
+    const el = r.querySelector(".active");
+    return el ? el.checked : true;
+  });
 
-  const histories = simulate(N, offsets, starts, g.step, protectedFrom);
-  const view = cropHistories(histories, g.shell);
+  const liveOrig = [];
+  for (let i = 0; i < rows.length; i++) if (allActive[i]) liveOrig.push(i);
+
+  // No active players — clear the canvas, blank the index panel, still update
+  // the hash so the empty-board URL round-trips.
+  if (!liveOrig.length) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    lastRun = { histories: [], colors: [], render: g.render };
+    renderIndexSeq([], [], allColors, g.step);
+    writeHash();
+    return;
+  }
+
+  const origToLive = new Map();
+  liveOrig.forEach((orig, live) => origToLive.set(orig, live));
+
+  const offsets = liveOrig.map((i) => allOffsets[i]);
+  const colors = liveOrig.map((i) => allColors[i]);
+  const starts = liveOrig.map((i) => allStarts[i]);
+  const protectedFrom = liveOrig.map((i) => {
+    const remap = [];
+    for (const j of allProtected[i]) {
+      if (origToLive.has(j)) remap.push(origToLive.get(j));
+    }
+    return new Set(remap);
+  });
+
+  const liveHistories = simulate(N, offsets, starts, g.step, protectedFrom);
+  const view = cropHistories(liveHistories, g.shell);
   // Store the cropped view so the PNG / full-image export matches the canvas.
   lastRun = { histories: view, colors, render: g.render };
   g.render(canvas, view, colors);
+  // Use uncropped liveHistories so the OEIS sequence isn't silently truncated
+  // by the visual crop.
+  renderIndexSeq(liveHistories, liveOrig, allColors, g.step);
   writeHash();
 }
 
@@ -274,7 +422,9 @@ function fullImageURL() {
 
 // --- URL hash state -------------------------------------------------------
 // Versioned, ;-separated key=value scheme; players in `p` are rows joined by
-// `~`, fields `piece,color6,start,ignores(. -joined)`.
+// `~`, fields `piece,color6,start,ignores(. -joined),active(1|0)`.
+// The 5th field (active) is additive: older v1 links omit it and the decoder
+// reads a missing field as active=true, so existing share-links round-trip.
 function encodeHash() {
   const p = state.players
     .slice(0, state.k)
@@ -283,7 +433,8 @@ function encodeHash() {
       const ig = pl.ignores
         .filter((j) => j >= 0 && j < state.k)
         .join(".");
-      return `${pl.piece},${color},${pl.start},${ig}`;
+      const act = pl.active ? "1" : "0";
+      return `${pl.piece},${color},${pl.start},${ig},${act}`;
     })
     .join("~");
   return `v1;g=${state.geom};k=${state.k};n=${state.n};p=${p}`;
@@ -326,7 +477,10 @@ function decodeHash() {
         .filter(
           (j) => Number.isInteger(j) && j >= 0 && j < state.k && j !== i
         );
-      state.players.push({ piece, color, start, ignores });
+      // f[4] absent (old v1 link) -> active = true. "0" -> false. Anything
+      // else (incl. "1") -> true.
+      const active = f[4] === undefined ? true : f[4] !== "0";
+      state.players.push({ piece, color, start, ignores, active });
     }
     ensurePlayers(state.k);
   } catch (e) {
@@ -335,7 +489,9 @@ function decodeHash() {
 }
 
 // --- per-setting Randomize / Reset ----------------------------------------
-// INVARIANT: every entry below runs via doOp(), which always ends in run().
+// INVARIANT: every entry below runs via doOp() or doRowOp(), which always end
+// in run(). Grid has no Randomize button (deleted from the HTML) since it's
+// only a 2-choice toggle — Reset All restores it.
 function randomizeAll() {
   const gn = Object.keys(GEOMETRIES);
   state.geom = gn[randInt(0, gn.length - 1)];
@@ -346,15 +502,11 @@ function randomizeAll() {
   for (let i = 0; i < state.k; i++) {
     state.players[i].piece = names[randInt(0, names.length - 1)];
     state.players[i].start = randInt(0, START_RAND_MAX);
+    state.players[i].active = true; // Randomize All shows the full lineup
     // Color is deliberately left as-is (Randomize All does not recolor).
   }
   for (let i = 0; i < state.k; i++) {
-    const ig = [];
-    for (let j = 0; j < state.k; j++) {
-      if (j === i) continue;
-      if (Math.random() < 0.5) ig.push(j); // independent fair coin per ordered pair
-    }
-    state.players[i].ignores = ig;
+    state.players[i].ignores = randomIgnores(i, state.k);
   }
 }
 function resetAll() {
@@ -366,19 +518,8 @@ function resetAll() {
 }
 
 const OPS = {
-  // Grid, Players: Randomize only (no Reset button — Reset All covers them).
-  grid: {
-    rnd: () => {
-      const gn = Object.keys(GEOMETRIES);
-      state.geom = gn[randInt(0, gn.length - 1)];
-    },
-  },
-  players: {
-    rnd: () => {
-      state.k = randInt(2, K_MAX);
-    },
-  },
-  // Rounds has no Randomize and no Reset button (Reset All restores it).
+  // Players and Rounds have no per-control Randomize/Reset — they're covered
+  // by Randomize All / Reset All. (Grid is a 2-choice toggle, same story.)
   color: {
     rnd: () => {
       for (let i = 0; i < state.k; i++) state.players[i].color = randColor();
@@ -412,12 +553,7 @@ const OPS = {
   ignores: {
     rnd: () => {
       for (let i = 0; i < state.k; i++) {
-        const ig = [];
-        for (let j = 0; j < state.k; j++) {
-          if (j === i) continue;
-          if (Math.random() < 0.5) ig.push(j); // independent fair coin per pair
-        }
-        state.players[i].ignores = ig;
+        state.players[i].ignores = randomIgnores(i, state.k);
       }
     },
     rst: () => {
@@ -437,26 +573,63 @@ function doOp(act, kind) {
   run();
 }
 
+// Per-row operations dispatched from the row buttons (rnd-row / rnd-prot).
+// Same shape as doOp: read DOM, mutate state, push to DOM, run. Per-player
+// removal is handled by unticking the row's Active checkbox — there is no
+// destructive delete.
+function doRowOp(kind, i) {
+  readDomIntoState();
+  ensurePlayers(state.k);
+  if (i < 0 || i >= state.k) return;
+
+  if (kind === "rnd-row") {
+    const names = Object.keys(geom().pieces);
+    state.players[i].piece = names[randInt(0, names.length - 1)];
+    state.players[i].start = randInt(0, START_RAND_MAX);
+    state.players[i].ignores = randomIgnores(i, state.k);
+    // Color is deliberately left as-is (matches Randomize All convention).
+  } else if (kind === "rnd-prot") {
+    state.players[i].ignores = randomIgnores(i, state.k);
+  } else {
+    return;
+  }
+
+  applyStateToDom();
+  run();
+}
+
 // --- wire up controls -----------------------------------------------------
+// Auto-rerun on every settings change. Geom and K rebuild the player table
+// first; run() picks up the new rows afterwards.
 geomInput.addEventListener("change", () => {
   readDomIntoState();
   buildPlayerRows();
+  run();
 });
 kInput.addEventListener("change", () => {
   readDomIntoState();
   buildPlayerRows();
+  run();
 });
-document.getElementById("run").addEventListener("click", run);
+nInput.addEventListener("change", run);
 
 // One delegated handler for every .rnd / .rst button (controls, table
-// header, actions row).
+// header, top-actions) and every per-row button (rnd-row / rnd-prot).
 document.body.addEventListener("click", (e) => {
+  const rowBtn =
+    e.target.closest && e.target.closest("button.rnd-row, button.rnd-prot");
+  if (rowBtn && rowBtn.dataset.i !== undefined) {
+    const kind = rowBtn.classList.contains("rnd-row") ? "rnd-row" : "rnd-prot";
+    doRowOp(kind, +rowBtn.dataset.i);
+    return;
+  }
   const btn = e.target.closest && e.target.closest("button.rnd, button.rst");
   if (!btn || !btn.dataset.act) return;
   doOp(btn.dataset.act, btn.classList.contains("rnd") ? "rnd" : "rst");
 });
 
-// Enter in any input/select runs.
+// Enter in any input/select runs. Cheap safety net on top of the per-control
+// change listeners (those fire on blur/commit; Enter is the impatient path).
 document.body.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   const t = e.target;
@@ -484,7 +657,7 @@ document.getElementById("copy-link").addEventListener("click", (e) => {
 });
 
 document.getElementById("png").addEventListener("click", () => {
-  if (!lastRun) return alert("Press Run first.");
+  if (!lastRun) return alert("Nothing to export yet — change a setting first.");
   const a = document.createElement("a");
   a.href = fullImageURL();
   a.download = "spiralchess.png";
@@ -492,7 +665,7 @@ document.getElementById("png").addEventListener("click", () => {
 });
 
 document.getElementById("open-full").addEventListener("click", () => {
-  if (!lastRun) return alert("Press Run first.");
+  if (!lastRun) return alert("Nothing to export yet — change a setting first.");
   const w = window.open();
   if (w) {
     w.document.write(

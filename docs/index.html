@@ -10,26 +10,34 @@
 <h1>Spiral Chess</h1>
 
 <p>
-K players take turns. Each walks an outward spiral from its own starting cell
-and drops a piece on the first cell not attacked by the other players' pieces.
-The square grid is based on OEIS A392177 / A392178; the hexagonal grid is the
-same game on a hex grid. Pick the grid, the number of rounds, the players,
-their pieces, colors and starting indices (position along the spiral, origin =
-0), then press Run. A player that "ignores threat from" an opponent may place
-on a cell that opponent only attacks (no pieces are ever removed; occupancy
-still blocks everyone). The piece's leaper vector is shown after its name.
-Run, Randomize All and Reset All are at the top; most settings also have their
-own Randomize and/or Reset (Reset = back to default). Every Randomize/Reset
-runs immediately. Randomize All leaves the colors untouched. The view is
-cropped to just inside the least-advanced player's furthest shell. The page
-URL always encodes the current board — Copy link shares it. Pressing Enter in
-any field runs.
+Spiral Chess is a turn-based placement game on a numbered grid, inspired by
+this <a href="https://www.youtube.com/watch?v=UiX4CFIiegM">Numberphile video</a>, based
+on work by <a href="https://jonka364.github.io/">Jonas Karlsson</a>. The
+two-knight game on a square grid generates the OEIS sequences
+<a href="https://oeis.org/A392177">A392177</a> and
+<a href="https://oeis.org/A392178">A392178</a>.
 </p>
 
-<p id="top-actions">
-<button id="run">Run</button>
-<button class="rnd" data-act="all">Randomize All</button>
-<button class="rst" data-act="all">Reset All</button>
+<p>
+The grid's cells are numbered along an spiral, progressing anti-clockwise outward, starting from the centre.
+The players take turns. On each turn, a player walks the spiral and
+places a piece on the first cell that is both empty and not attacked by any
+opponent's piece. Pieces are never removed. After <em>N</em> rounds each
+player has placed <em>N</em> pieces, each occupied cell colored by the respective player's color.
+</p>
+
+<p>
+You can play with three generalizations to the base game. You can modify each player's
+starting position along the spiral (0 = centre). You can allow players to ignore threats
+from other players, enabling them to place their pieces in cells even if they are being
+attacked by those other players.
+And you can switch the grid from square to hexagonal, with the chess
+pieces generalized to hex moves.
+</p>
+
+<p>
+The URL encodes the current board. Copy it to share.
+Contact: astronick708@gmail.com.
 </p>
 
 <div id="controls">
@@ -39,16 +47,20 @@ Grid:
 <option value="square" selected>Square</option>
 <option value="hex">Hexagonal</option>
 </select>
-<button class="rnd" data-act="grid">Randomize</button>
 </p>
 <p class="ctl">
 Players: <input type="number" id="k" value="2" min="1" max="8">
-<button class="rnd" data-act="players">Randomize</button>
 </p>
 <p class="ctl">
 Rounds: <input type="number" id="n" value="10000" min="1" max="1000000">
+<small>(max 1,000,000; large number of rounds might temporarily freeze the webpage)</small>
 </p>
 </div>
+
+<p id="top-actions">
+<button class="rnd" data-act="all">Randomize All</button>
+<button class="rst" data-act="all">Reset All</button>
+</p>
 
 <table id="players">
 <thead>
@@ -66,13 +78,13 @@ Rounds: <input type="number" id="n" value="10000" min="1" max="1000000">
 <button class="rst" data-act="piece">Reset</button>
 </div>
 </th>
-<th title="Starting position: index along the spiral, origin = 0">Starting position
+<th title="Starting position: spiral index where this player begins (0 = origin).">Starting<br>position
 <div class="hdr-btns">
 <button class="rnd" data-act="start">Randomize</button>
 <button class="rst" data-act="start">Reset</button>
 </div>
 </th>
-<th title="Tick Pj so this player ignores player j's threats — it may place on a cell j only attacks. Occupancy still blocks everyone; no piece is ever removed.">ignores threat from
+<th title="Tick Pj to make this player ignore Pj's threats &mdash; this player may place on a cell Pj only attacks. Occupancy still blocks everyone; no piece is ever removed.">Ignore threats from
 <div class="hdr-btns">
 <button class="rnd" data-act="ignores">Randomize</button>
 <button class="rst" data-act="ignores">Reset</button>
@@ -90,6 +102,11 @@ Rounds: <input type="number" id="n" value="10000" min="1" max="1000000">
 </p>
 
 <canvas id="canvas" width="800" height="800"></canvas>
+
+<details id="index-seq">
+<summary>Index sequences</summary>
+<div id="index-seq-body"></div>
+</details>
 
 <script type="module" src="src/main.js"></script>
 </body>

@@ -6,4 +6,11 @@ table#players { border-collapse: collapse; }
 table#players th, table#players td { border: 1px solid #ccc; padding: 2px 6px; text-align: left; }
 table#players th { background: #f0f0f0; }
 .hdr-btns { font-weight: normal; }
-#run, button.rnd[data-act="all"] { font-size: 1.1em; font-weight: bold; padding: 4px 14px; background: #1565C0; color: #fff; border: 1px solid #0d47a1; }
+.hdr-btns button { display: block; margin: 1px 0; }
+/* Narrow the start-index <input type=number> so its column hugs the header
+   width. type=number ignores the HTML `size=` attribute, so we set CSS width
+   directly. ~4em fits two digits plus the spinner buttons. */
+table#players input.start-index { width: 4em; }
+#top-actions button { font-size: 1.1em; font-weight: bold; padding: 4px 14px; }
+#index-seq { margin-top: 0.5em; }
+#index-seq code { font-family: monospace; }
