@@ -6,7 +6,7 @@ import { hexStep, hexShell } from "./hexspiral.js";
 import { hexRender } from "./hexrender.js";
 import { simulate } from "./simulation.js";
 
-// Default per-player colors (ported from PLAYER_COLORS, main.py 146-155).
+// Default per-player colors, used in order P1..P8.
 const PLAYER_COLORS = [
   "#1565C0", "#C62828", "#2E7D32", "#E65100",
   "#6A1B9A", "#00838F", "#F9A825", "#4E342E",
@@ -16,7 +16,7 @@ const PLAYER_COLORS = [
 const DEFAULTS = {
   geom: "square",
   k: 2,
-  n: 10000,
+  n: 20000,
   piece: "knight", // per-player
   start: 0, // per-player (start index)
   color: (i) => PLAYER_COLORS[i % PLAYER_COLORS.length], // per-player
@@ -26,6 +26,7 @@ const DEFAULTS = {
 const K_MIN = 1, K_MAX = 8;
 const N_MIN = 1, N_MAX = 1000000;
 const START_RAND_MAX = 25; // Start-Randomize draws 0..25 inclusive
+const CROP_MIN_N = 10000;  // skip the slowest-player crop when N <= this
 
 // A "geometry" bundles everything that differs between the square and hex
 // lattices. The placement loop (simulate) and the rest of the UI are shared.
@@ -61,11 +62,11 @@ const nInput = document.getElementById("n");
 const canvas = document.getElementById("canvas");
 const indexSeqBody = document.getElementById("index-seq-body");
 
-let lastRun = null; // { histories, colors, render } from the most recent Run
+let lastRun = null; // { histories, colors, render } from the most recent run()
 
-// The authoritative model for Randomize/Reset math. run() still *reads the
-// DOM* (so the Python parity path is byte-identical with defaults), but every
-// randomize/reset writes `state`, pushes it to the DOM, then runs.
+// The authoritative model for Randomize/Reset math. run() reads the DOM at
+// the top so manual edits get captured; every randomize/reset writes `state`,
+// pushes it to the DOM via applyStateToDom(), then calls run().
 function freshDefaultState() {
   return {
     geom: DEFAULTS.geom,
@@ -131,10 +132,6 @@ function ensurePlayers(k) {
       ignores: DEFAULTS.ignores(),
       active: DEFAULTS.active,
     });
-  }
-  // Backfill any pre-existing row that pre-dates the `active` flag.
-  for (const p of state.players) {
-    if (typeof p.active !== "boolean") p.active = DEFAULTS.active;
   }
 }
 
@@ -235,40 +232,30 @@ function readDomIntoState() {
     p.start = readIndex(r.querySelector(".start-index"));
     const activeEl = r.querySelector(".active");
     p.active = activeEl ? activeEl.checked : true;
-    const checked = new Set(
-      [...r.querySelectorAll(".prot:checked")].map((c) => +c.dataset.target)
+    const checked = [...r.querySelectorAll(".prot:checked")].map(
+      (c) => +c.dataset.target
     );
-    // Preserve ignore targets that were out of the rendered range (no
-    // checkbox to read), merge with the visible checked ones.
-    const preserved = p.ignores.filter((j) => j >= renderedK);
-    p.ignores = [...new Set([...preserved, ...checked])]
-      .filter((j) => j !== i && j >= 0)
-      .sort((a, b) => a - b);
+    p.ignores = checked.filter((j) => j !== i).sort((a, b) => a - b);
   });
 }
 
-// Largest spiral shell any cell of one player's history reaches. A player's
-// candidate only ever steps forward, so this is the shell of its last piece.
-function maxShell(h, shell) {
-  let m = -Infinity;
-  for (const c of h) {
-    const s = shell(c);
-    if (s > m) m = s;
-  }
-  return m;
-}
-
-// Crop the view to one less than the last shell of the *slowest* player — the
-// player whose furthest piece sits on the smallest shell. Pieces beyond that
-// shell are dropped, so render's autoscale zooms to the region every player
-// reached. Loops (not Math.max(...spread)) so N up to 1e6 can't blow the
-// stack. Degenerate crops (nothing left, or slowest only reached shell 0)
-// fall back to the full, uncropped histories.
+// Crop the view to one less than the furthest shell of the *slowest* player.
+// Since each player walks forward along the spiral, the furthest shell of a
+// history is just the shell of its last placement. Pieces beyond the slowest
+// player's reach are dropped so the renderer's autoscale zooms to the region
+// every player actually got to. Loops (not Math.max(...spread)) so N up to
+// 1e6 can't blow the call stack. Degenerate crops (nothing left, or the
+// slowest player only reached shell 0) fall back to the full histories so we
+// never render a blank canvas.
 function cropHistories(histories, shell) {
   let slowest = Infinity;
   for (const h of histories) {
     if (!h.length) continue;
-    const m = maxShell(h, shell);
+    let m = -Infinity;
+    for (const c of h) {
+      const s = shell(c);
+      if (s > m) m = s;
+    }
     if (m < slowest) slowest = m;
   }
   if (!isFinite(slowest)) return histories;
@@ -280,19 +267,19 @@ function cropHistories(histories, shell) {
 
 // --- index-sequence panel -------------------------------------------------
 // For each history's cells, find their global-spiral index — i.e. how many
-// step()s from the origin reach that cell. This is the OEIS numbering used in
-// A392177 etc., independent of where each player's *own* spiral starts. We
-// walk the global spiral once, recording each visited cell's index in a Map,
-// and stop as soon as every cell we care about has been seen.
+// step()s from the origin reach that cell. This is the OEIS numbering used
+// in A392177 etc., independent of where each player's *own* spiral starts.
+// We walk the global spiral once, recording each visited cell's index in a
+// Map, and exit early as soon as every wanted cell has been seen.
 function globalSpiralIndices(histories, step) {
   const wanted = new Set();
   for (const h of histories) for (const c of h) wanted.add(key(c));
   if (wanted.size === 0) return histories.map(() => []);
 
-  // Safety cap: A392177-like sequences place at indices ~3x piece count, so
-  // walking ~50x the wanted-set size is more than enough headroom. The walk
-  // exits early via the wanted.size===0 check below in the common case.
-  const cap = Math.max(10000, wanted.size * 50);
+  // Safety cap on the walk: placements stay much denser than 50× per cell,
+  // so this is comfortably loose and the wanted-set drains to empty long
+  // before we hit it.
+  const cap = wanted.size * 50;
   const keyToIdx = new Map();
   let cell = [0, 0];
   for (let idx = 0; idx < cap; idx++) {
@@ -320,7 +307,6 @@ function globalSpiralIndices(histories, step) {
 // ~75 anyway, and rendering tens of thousands of commas locks the DOM up.
 const INDEX_SEQ_CAP = 100;
 function renderIndexSeq(liveHistories, liveOrig, allColors, step) {
-  if (!indexSeqBody) return;
   if (!liveHistories.length) {
     indexSeqBody.innerHTML = "<i>No active players.</i>";
     return;
@@ -352,8 +338,8 @@ function run() {
   // never reach simulate(); they're stripped out and the remaining ones are
   // renumbered into a contiguous 0..K'-1 lineup, with their `ignores` lists
   // remapped through origToLive (and any reference to an inactive opponent
-  // dropped). This keeps simulation.js untouched — the Python parity path
-  // through it is identical when every player is active.
+  // dropped). simulate() never sees the inactive players, so the protection
+  // relation it receives is always self-consistent.
   const allOffsets = rows.map((r) => g.offsetsFor(r.querySelector("select").value));
   const allColors = rows.map((r) => r.querySelector('input[type="color"]').value);
   const allStarts = rows.map((r) =>
@@ -399,8 +385,12 @@ function run() {
   });
 
   const liveHistories = simulate(N, offsets, starts, g.step, protectedFrom);
-  const view = cropHistories(liveHistories, g.shell);
-  // Store the cropped view so the PNG / full-image export matches the canvas.
+  // Only crop when N is large enough that the slowest-player zoom helps
+  // readability. At small N every piece is interesting, so show them all.
+  const view = N > CROP_MIN_N
+    ? cropHistories(liveHistories, g.shell)
+    : liveHistories;
+  // Store the (possibly cropped) view so PNG / full-image export matches the canvas.
   lastRun = { histories: view, colors, render: g.render };
   g.render(canvas, view, colors);
   // Use uncropped liveHistories so the OEIS sequence isn't silently truncated
@@ -442,11 +432,7 @@ function encodeHash() {
 function writeHash() {
   // replaceState (not location.hash=) avoids a back-button entry per run and
   // a hashchange feedback loop. The address bar is always a shareable link.
-  try {
-    history.replaceState(null, "", "#" + encodeHash());
-  } catch (e) {
-    /* e.g. file:// — harmless, sharing just isn't available there */
-  }
+  history.replaceState(null, "", "#" + encodeHash());
 }
 function decodeHash() {
   try {
@@ -580,7 +566,6 @@ function doOp(act, kind) {
 function doRowOp(kind, i) {
   readDomIntoState();
   ensurePlayers(state.k);
-  if (i < 0 || i >= state.k) return;
 
   if (kind === "rnd-row") {
     const names = Object.keys(geom().pieces);
@@ -628,36 +613,19 @@ document.body.addEventListener("click", (e) => {
   doOp(btn.dataset.act, btn.classList.contains("rnd") ? "rnd" : "rst");
 });
 
-// Enter in any input/select runs. Cheap safety net on top of the per-control
-// change listeners (those fire on blur/commit; Enter is the impatient path).
-document.body.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter") return;
-  const t = e.target;
-  if (t && (t.tagName === "INPUT" || t.tagName === "SELECT")) {
-    e.preventDefault();
-    run();
-  }
-});
-
 document.getElementById("copy-link").addEventListener("click", (e) => {
-  const url = location.href;
+  // Briefly swap the button label to "Copied" as visual feedback.
   const btn = e.currentTarget;
-  const restore = () => {
+  navigator.clipboard.writeText(location.href).then(() => {
     const txt = btn.textContent;
     btn.textContent = "Copied";
     setTimeout(() => {
       btn.textContent = txt;
     }, 1000);
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(restore, () => alert(url));
-  } else {
-    alert(url);
-  }
+  });
 });
 
 document.getElementById("png").addEventListener("click", () => {
-  if (!lastRun) return alert("Nothing to export yet — change a setting first.");
   const a = document.createElement("a");
   a.href = fullImageURL();
   a.download = "spiralchess.png";
@@ -665,7 +633,6 @@ document.getElementById("png").addEventListener("click", () => {
 });
 
 document.getElementById("open-full").addEventListener("click", () => {
-  if (!lastRun) return alert("Nothing to export yet — change a setting first.");
   const w = window.open();
   if (w) {
     w.document.write(

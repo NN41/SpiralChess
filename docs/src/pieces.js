@@ -1,6 +1,5 @@
-// Port of step_dict + reachable() in playground/square/main.py (lines 42-63).
-
-// Built-in pieces: name -> [m, n] leaper vector.
+// Built-in square-grid leapers: name -> defining [m, n] vector. An [m, n]
+// leaper jumps any of the 8 squares ±m, ±n away (or ±n, ±m); see reachable().
 export const PIECES = {
   knight: [2, 1],
   fers: [1, 1],
@@ -15,8 +14,9 @@ export const PIECES = {
   marzban: [3, 3],
 };
 
-// Given a square [x,y] and a leaper vector [m,n], return the 8 squares it
-// attacks. No dedupe (matches Python; a Set absorbs duplicates).
+// The 8 squares an [m, n] leaper attacks from [x, y], under the D4 symmetry
+// of the square grid (sign flips on each coordinate, plus swap of m/n).
+// Duplicates are fine — callers feed these into a Set.
 export function reachable([x, y], [m, n]) {
   return [
     [x + m, y + n], [x + m, y - n], [x - m, y + n], [x - m, y - n],

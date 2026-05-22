@@ -1,6 +1,5 @@
-// Draw hex placement histories on a canvas. Same shape as render.js (same
-// signature, same autoscale-with-margin idea) but cells are pointy-top
-// hexagons placed at their Cartesian centers.
+// Draw hex placement histories on a canvas: autoscale to the data bounds in
+// Cartesian space, then fill a pointy-top hexagon at each cell's center.
 import { hexToCartesian } from "./hexspiral.js";
 
 // Corners of a pointy-top hexagon of circumradius 1, centered at the origin.
@@ -45,7 +44,7 @@ export function hexRender(canvas, histories, colors) {
   const py = (y) => H - (oy + (y - ymin) * scale); // flip: math up = screen up
 
   // At small scales a full hexagon polygon is sub-pixel and disappears; fall
-  // back to a 1px dot so dense runs stay visible (mirrors render.js's >=1px).
+  // back to a 1px dot so dense runs stay visible.
   const tiny = scale < 1.2;
 
   for (let i = 0; i < histories.length; i++) {

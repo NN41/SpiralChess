@@ -1,13 +1,11 @@
-// Hex pieces. 1:1 port of step_dict + hex_orbit() + reachable() in
-// playground/hexagonal/main.py (lines 80-109).
-//
-// Each piece is a canonical cube triple (a, b, c) with a + b + c = 0. The
-// squares it attacks are the orbit of that triple under the hex symmetry
-// group D6: every signed permutation of (|a|, |b|, |c|) that still sums to 0.
-// Projected to axial offsets [a, b], that orbit is the attack pattern.
+// Built-in hex-grid leapers. Each piece is identified by a canonical cube
+// triple (a, b, c) with a + b + c = 0. The cells it attacks are the orbit of
+// that triple under the hex symmetry group D6 — every signed permutation of
+// (|a|, |b|, |c|) that still sums to zero. Projected to axial coordinates
+// [a, b] (c = -a-b is implied), that orbit is the piece's attack pattern.
 export const HEX_PIECES = {
   knight: [1, 2, -3], // 12 destinations
-  vazir: [1, 0, -1],  //  6 — the adjacent hex
+  vazir: [1, 0, -1],  //  6 — adjacent hex
   fers: [1, 1, -2],   //  6 — "two-step diagonal"
   camel: [1, 3, -4],  // 12
   zebra: [2, 3, -5],  // 12
@@ -21,8 +19,10 @@ for (const s0 of [-1, 1])
   for (const s1 of [-1, 1])
     for (const s2 of [-1, 1]) SIGNS3.push([s0, s1, s2]);
 
-// All signed permutations of |triple| that still sum to 0, as unique axial
-// offsets [a, b] (c = -a-b is implied, so deduping on [a,b] is exact).
+// Compute the D6 orbit of a cube triple as a deduped list of axial offsets
+// [a, b]. We iterate every permutation × sign combination of the absolute
+// values, keep those that still sum to zero, and dedupe on (a, b) since
+// c = -a-b is fully determined by them.
 export function hexOrbit([a, b, c]) {
   const abs = [Math.abs(a), Math.abs(b), Math.abs(c)];
   const seen = new Set();
